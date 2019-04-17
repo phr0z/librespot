@@ -29,6 +29,7 @@ impl Default for Bitrate {
 pub struct PlayerConfig {
     pub bitrate: Bitrate,
     pub normalisation: bool,
+    pub greedy_sink: bool,
     pub normalisation_pregain: f32,
 }
 
@@ -37,6 +38,7 @@ impl Default for PlayerConfig {
         PlayerConfig {
             bitrate: Bitrate::default(),
             normalisation: false,
+            greedy_sink: false,
             normalisation_pregain: 0.0,
         }
     }

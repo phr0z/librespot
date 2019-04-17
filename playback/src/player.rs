@@ -6,9 +6,9 @@ use std;
 use std::borrow::Cow;
 use std::io::{Read, Result, Seek, SeekFrom};
 use std::mem;
-use std::sync::mpsc::{RecvError, RecvTimeoutError, TryRecvError};
+use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use config::{Bitrate, PlayerConfig};
 use core::session::Session;
@@ -20,6 +20,7 @@ use audio_backend::Sink;
 use metadata::{FileFormat, Metadata, Track};
 use mixer::AudioFilter;
 
+
 pub struct Player {
     commands: Option<std::sync::mpsc::Sender<PlayerCommand>>,
     thread_handle: Option<thread::JoinHandle<()>>,
@@ -29,6 +30,7 @@ struct PlayerInternal {
     session: Session,
     config: PlayerConfig,
     commands: std::sync::mpsc::Receiver<PlayerCommand>,
+    sink_stop_instant: Instant,
 
     state: PlayerState,
     sink: Box<Sink>,
@@ -128,6 +130,7 @@ impl Player {
                 session: session,
                 config: config,
                 commands: cmd_rx,
+                sink_stop_instant: Instant::now(),
 
                 state: PlayerState::Stopped,
                 sink: sink_builder(),
@@ -308,9 +311,19 @@ impl PlayerInternal {
                     }
                 }
             } else {
-                match self.commands.recv() {
+                match self.commands.try_recv() {
                     Ok(cmd) => Some(cmd),
-                    Err(RecvError) => return,
+                    Err(TryRecvError::Empty) => {
+                        if self.sink_running && self.config.greedy_sink {
+                            let now = Instant::now();
+                            if now.duration_since(self.sink_stop_instant) > Duration::from_secs(5) {
+                                self.sink_stop_instant = Instant::now();
+                                self.stop_sink();
+                            }
+                        }
+                        None
+                    },
+                    Err(TryRecvError::Disconnected) => return,
                 }
             };
 
@@ -361,6 +374,10 @@ impl PlayerInternal {
         }
     }
 
+    fn stop_sink_with_delay(&mut self){
+        self.sink_stop_instant = Instant::now();
+    }
+
     fn stop_sink(&mut self) {
         self.sink.stop().unwrap();
         self.sink_running = false;
@@ -388,7 +405,12 @@ impl PlayerInternal {
             }
 
             None => {
-                self.stop_sink();
+                if self.config.greedy_sink {
+                    self.stop_sink_with_delay();
+                } else {
+                    self.stop_sink();
+                }
+
                 self.state.playing_to_end_of_track();
             }
         }
@@ -399,7 +421,11 @@ impl PlayerInternal {
         match cmd {
             PlayerCommand::Load(track_id, play, position, end_of_track) => {
                 if self.state.is_playing() {
-                    self.stop_sink_if_running();
+                    if self.config.greedy_sink {
+                        self.stop_sink_with_delay();
+                    } else {
+                        self.stop_sink_if_running();
+                    }
                 }
 
                 match self.load_track(track_id, position as i64) {

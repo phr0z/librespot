@@ -189,6 +189,11 @@ fn setup(args: &[String]) -> Setup {
             "",
             "linear-volume",
             "increase volume linear instead of logarithmic.",
+        )
+        .optflag(
+            "",
+            "enable-greedy-sink",
+            "Don't release sink b/w tracks",
         );
 
     let matches = match opts.parse(&args[1..]) {
@@ -316,6 +321,7 @@ fn setup(args: &[String]) -> Setup {
         PlayerConfig {
             bitrate: bitrate,
             normalisation: matches.opt_present("enable-volume-normalisation"),
+            greedy_sink: matches.opt_present("enable-greedy-sink"),
             normalisation_pregain: matches
                 .opt_str("normalisation-pregain")
                 .map(|pregain| pregain.parse::<f32>().expect("Invalid pregain float value"))
