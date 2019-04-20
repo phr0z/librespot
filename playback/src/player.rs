@@ -6,7 +6,7 @@ use std;
 use std::borrow::Cow;
 use std::io::{Read, Result, Seek, SeekFrom};
 use std::mem;
-use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
+use std::sync::mpsc::{RecvError, RecvTimeoutError, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -311,20 +311,10 @@ impl PlayerInternal {
                     }
                 }
             } else {
-                match self.commands.try_recv() {
+                match self.commands.recv() {
                     Ok(cmd) => Some(cmd),
-                    Err(TryRecvError::Empty) => {
-                        if self.sink_running && self.config.greedy_sink {
-                            let now = Instant::now();
-                            if now.duration_since(self.sink_stop_instant) > Duration::from_secs(5) {
-                                self.sink_stop_instant = Instant::now();
-                                self.stop_sink();
-                            }
-                        }
-                        None
-                    },
-                    Err(TryRecvError::Disconnected) => return,
-                }
+                    Err(RecvError) => return,
+		}
             };
 
             if let Some(cmd) = cmd {
